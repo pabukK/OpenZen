@@ -22,6 +22,7 @@ import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import shit.zen.modules.impl.render.NameProtect;
 import shit.zen.event.impl.GlRenderEvent;
 import shit.zen.event.impl.PacketEvent;
 import shit.zen.event.impl.Render2DEvent;
@@ -42,56 +43,79 @@ import shit.zen.event.EventTarget;
 public class PlayerListHud
 extends HudElement {
     public static final class PlayerEntry {
-        public final PlayerListHud parent;
+        public final PlayerListHud outer;
         public final net.minecraft.world.entity.player.Player player;
+        public String displayName;
+        public float nameWidth;
         public java.util.List<ItemStack> items;
-        public final java.util.Map<net.minecraft.world.item.Item, ItemStack> itemStacks = new java.util.HashMap<>();
+        public float totalWidth;
         public final java.util.Map<net.minecraft.world.item.Item, Integer> cheatItems = new java.util.HashMap<>();
         public final java.util.Set<net.minecraft.world.item.Item> flaggedItems = new java.util.HashSet<>();
-        public final SmoothAnimationTimer fadeAnim = new SmoothAnimationTimer();
+        public final java.util.Map<net.minecraft.world.item.Item, ItemStack> itemStacks = new java.util.HashMap<>();
+        public final long createdTime;
         public final SmoothAnimationTimer slideAnim = new SmoothAnimationTimer();
+        public final SmoothAnimationTimer fadeAnim = new SmoothAnimationTimer();
         public final SmoothAnimationTimer heightAnim = new SmoothAnimationTimer();
         public final SmoothAnimationTimer alphaAnim = new SmoothAnimationTimer();
         public final SmoothAnimationTimer widthAnim = new SmoothAnimationTimer();
-        public String displayName;
-        public float nameWidth;
-        public boolean visible = true;
-        public boolean rightAligned = false;
-        public float alpha = 1.0f;
-        public float targetY;
-        public float currentY;
         public boolean removing = false;
+        public boolean visible = true;
+        public final boolean rightAligned;
 
-        public PlayerEntry(PlayerListHud parent, net.minecraft.world.entity.player.Player player, java.util.List<ItemStack> items) {
-            this.parent = parent;
+        public PlayerEntry(PlayerListHud outer, net.minecraft.world.entity.player.Player player, java.util.List<ItemStack> initialItems) {
+            this.outer = outer;
             this.player = player;
-            this.items = items;
-            this.displayName = player.getName().getString();
-            for (ItemStack stack : items) {
-                this.itemStacks.put(stack.getItem(), stack);
+            this.rightAligned = outer.wasRightAligned;
+            this.createdTime = System.currentTimeMillis();
+            initialItems.forEach(this::addItemStack);
+            ArrayList<ItemStack> initialList = new ArrayList<>();
+            for (ItemStack stack : this.itemStacks.values()) {
+                if (ItemUtil.isOtherCheat(stack)) {
+                    this.cheatItems.put(stack.getItem(), stack.getDamageValue());
+                }
+                initialList.add(stack);
             }
+            this.updateItems(initialList);
+            this.slideAnim.setCurrentValue(this.rightAligned ? 20.0 : -20.0);
+            this.heightAnim.setCurrentValue(0.0);
+            this.alphaAnim.setCurrentValue(0.0);
+            this.widthAnim.setCurrentValue(this.totalWidth);
+        }
+
+        public void updateItems(java.util.List<ItemStack> items) {
+            this.items = items;
+            this.displayName = NameProtect.replacePlayerName(this.player.getName().getString());
+            this.nameWidth = GlHelper.getStringWidth(this.displayName, this.outer.headerFont);
+            float padding = 5.0f;
+            float gap = 3.0f;
+            float headSize = 20.0f;
+            float itemSize = 16.0f;
+            this.totalWidth = padding + headSize + gap + this.nameWidth + gap + items.size() * (itemSize + gap) + padding;
+            this.widthAnim.animate(this.totalWidth, 0.25, Easings.EASE_OUT_SINE);
         }
 
         public void startRemove() {
+            if (this.removing) return;
             this.removing = true;
-        }
-
-        public void updateItems(java.util.List<ItemStack> newItems) {
-            this.items = newItems;
-        }
-
-        public boolean isRemoveDone() {
-            return this.removing && this.alpha <= 0.01f;
+            float dist = 40.0f;
+            this.slideAnim.animate(this.rightAligned ? dist : -dist, 0.2, Easings.EASE_IN_POW3);
+            this.heightAnim.animate(0.0, 0.2, Easings.EASE_OUT_POW3);
         }
 
         public void tick() {
-            float target = this.removing ? 0.0f : 1.0f;
-            this.alpha += (target - this.alpha) * 0.18f;
-            this.currentY += (this.targetY - this.currentY) * 0.18f;
-            this.fadeAnim.tick();
             this.slideAnim.tick();
+            this.fadeAnim.tick();
             this.heightAnim.tick();
             this.alphaAnim.tick();
+            this.widthAnim.tick();
+        }
+
+        public boolean isRemoveDone() {
+            return this.removing && this.heightAnim.isDone();
+        }
+
+        private void addItemStack(ItemStack stack) {
+            this.itemStacks.putIfAbsent(stack.getItem(), stack);
         }
     }
 
